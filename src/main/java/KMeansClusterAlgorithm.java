@@ -3,7 +3,7 @@
  * @date:2019/5/1
  * @des
  */
-public class KMeansCluster {
+public class KMeansClusterAlgorithm {
     public static void main(String[] args) {
 
     }

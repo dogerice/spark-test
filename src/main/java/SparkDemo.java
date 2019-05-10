@@ -73,9 +73,9 @@ public class SparkDemo {
                 double[] feture_double = Arrays.stream(fetureDouble).mapToDouble(Double::valueOf).toArray();*/
 
                 double[] feture_doubles = new double[trainFetureNum];
-                double labelDouble = row.getDouble(0);
+                double labelDouble = new Double(row.get(0).toString());
                 for(int i = 0;i<trainFetureNum;i++){
-                    feture_doubles[i] = row.getDouble(i+1);
+                    feture_doubles[i] = Double.parseDouble(row.get(i+1).toString());
                 }
                 return new LabeledPoint(labelDouble,Vectors.dense(feture_doubles));
             }
@@ -95,7 +95,7 @@ public class SparkDemo {
                 double[] testFetureDoubles = new double[testFetureNum];
                 for (int i = 0;i<testFetureNum;i++){
                     //第一列为无用列 从第二列开始取
-                    testFetureDoubles[i] = row.getDouble(i+1);
+                    testFetureDoubles[i] = Double.parseDouble(row.get(i+1).toString());
                 }
                 Vector testFetureVector = Vectors.dense(testFetureDoubles);
                 double resLabel = model.predict(testFetureVector);
