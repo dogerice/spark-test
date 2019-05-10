@@ -1,3 +1,5 @@
+import com.alibaba.fastjson.JSONObject;
+import org.apache.commons.lang3.ArrayUtils;
 import org.apache.spark.SparkConf;
 import org.apache.spark.api.java.JavaPairRDD;
 import org.apache.spark.api.java.JavaRDD;
@@ -18,6 +20,7 @@ import org.apache.spark.sql.types.StructType;
 import scala.Tuple2;
 
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
 import java.util.Properties;
 
@@ -29,21 +32,64 @@ import java.util.Properties;
  */
 public class NaiveBayesAlgorithm {
     public static void main(String[] args) {
-        SparkConf conf = new SparkConf().setAppName("SparkNaiveBayesTest");
+        SparkConf conf = new SparkConf().setAppName("NaiveBayesAlgorithm");
         JavaSparkContext jsc = new JavaSparkContext(conf);
-        for(String arg :args){
-            System.out.println("_______________________________________"+arg);
-        }
         SQLContext sqlContext = new SQLContext(jsc);
 
-/*        JSONObject params = JSON.parseObject(args[0]);
-        JSONObject ds = params.getJSONObject("datasource");
-        JSONArray labels = params.getJSONArray("labelColumns");
-        JSONArray features = params.getJSONArray("featureColumns");
-        String ModelSavePath = params.getString("modelSavePath");*/
+        System.out.println("get Arg encode "+args[0]);
+        System.out.println("get Arg decode "+ new String(Base64.getDecoder().decode(args[0])));
+        JSONObject arg = JSONObject.parseObject(new String(Base64.getDecoder().decode(args[0])));
+        JSONObject datasource = arg.getJSONObject("datasource");
+        JSONObject trainTable = datasource.getJSONObject("train_table");
+        JSONObject testTable = datasource.getJSONObject("test_table");
+        JSONObject output = arg.getJSONObject("output");
+        JSONObject resultTable = output.getJSONObject("result_table");
+        JSONObject operationalParam = arg.getJSONObject("operational_param");
 
-        //jdbc.url=jdbc:mysql://localhost:3306/database
-//        String url = "jdbc:mysql://"+ds.getString("address")+":"+ds.getString("port")+"/"+ds.getString("database") +"?useUnicode=true&characterEncoding=utf-8&useSSL=false";
+        System.out.println(testTable.toJSONString());
+        System.out.println(trainTable.toJSONString());
+        System.out.println(resultTable.toJSONString());
+        System.out.println(operationalParam.toJSONString());
+
+        //训练表信息
+        String trainTableUrl="jdbc:mysql://"+trainTable.getString("database_address")+":"+trainTable.getString("port")+"/"+
+                trainTable.getString("database")+"?useUnicode=true&characterEncoding=utf-8&useSSL=false";
+        String trainTableName=trainTable.getString("tablename");
+        Properties trainConnProp = new Properties();
+        trainConnProp.put("user",trainTable.getString("account"));
+        trainConnProp.put("password",trainTable.getString("password"));
+        trainConnProp.put("driver","com.mysql.jdbc.Driver");
+        String trainLabelCol = operationalParam.getString("train_label_col");
+        String[] trainFetureCol = operationalParam.getString("train_feture_col").split(" ");
+        int trainFetureNum = trainFetureCol.length;
+
+        //测试表信息
+
+        String testTableUrl="jdbc:mysql://"+testTable.getString("database_address")+":"+testTable.getString("port")+"/"+
+                testTable.getString("database")+"?useUnicode=true&characterEncoding=utf-8&useSSL=false";
+        String testTableName=testTable.getString("tablename");
+        Properties testConnProp = new Properties();
+        testConnProp.put("user",testTable.getString("account"));
+        testConnProp.put("password",testTable.getString("password"));
+        testConnProp.put("driver","com.mysql.jdbc.Driver");
+
+        String[] testFetureCol = operationalParam.getString("test_feture_col").split(" ");
+        int testFetureNum = testFetureCol.length;
+
+        //结果表信息
+
+        String resultTableUrl="jdbc:mysql://"+resultTable.getString("database_address")+":"+resultTable.getString("port")+"/"+
+                resultTable.getString("database")+"?useUnicode=true&characterEncoding=utf-8&useSSL=false";
+        String resultTableName=resultTable.getString("tablename");
+        Properties resultConnProp = new Properties();
+        resultConnProp.put("user",resultTable.getString("account"));
+        resultConnProp.put("password",resultTable.getString("password"));
+        resultConnProp.put("driver","com.mysql.jdbc.Driver");
+        String resultLabelCol = operationalParam.getString("result_label_col");
+        String[] resultFetureCol = operationalParam.getString("result_feture_col").split(" ");
+        int resultFetureNum = resultFetureCol.length;
+
+/*
         String url = "jdbc:mysql://10.16.4.67:3306/spark_test?useUnicode=true&characterEncoding=utf-8&useSSL=false";
         System.out.println(url);
         //查找的表名
@@ -52,73 +98,99 @@ public class NaiveBayesAlgorithm {
         Properties connectionProperties = new Properties();
         connectionProperties.put("user","root");
         connectionProperties.put("password","root");
-        connectionProperties.put("driver","com.mysql.jdbc.Driver");
+        connectionProperties.put("driver","com.mysql.jdbc.Driver");*/
 
-        //SparkJdbc读取Postgresql的products表内容
-//        System.out.println("读取数据库中的bayes_train_data表内容");
-        // 读取表中所有数据
-        final Dataset<Row> rows = sqlContext.read().jdbc(url,table,connectionProperties).select("*");
-        //显示数据
-        rows.show();
+        //SparkJdbc读取表内容
+        // 读取表数据
+//        String trainLabelCol = "label";
+//        String trainFetureCol[] = {"feture1","feture2","feture3"};
+//        int trainFetureNum = 3;
 
+//        String testFetureCol[] = {"feture1","feture2","feture3"};
+//        int testFetureNum = 3;
 
-        JavaRDD<LabeledPoint> trainData = rows.javaRDD().map(new Function<Row, LabeledPoint>() {
+        Dataset<Row> trainRows = sqlContext.read().jdbc(trainTableUrl,trainTableName,trainConnProp).select(trainLabelCol,trainFetureCol);
+        trainRows.show();
+        JavaRDD<LabeledPoint> trainRDD = trainRows.javaRDD().map(new Function<Row, LabeledPoint>() {
             @Override
             public LabeledPoint call(Row row) throws Exception {
-                LabeledPoint lp = new LabeledPoint(row.getInt(1), Vectors.dense(row.getInt(2),row.getInt(3),row.getInt(4)));
+                /*String[] strs = row.toString().split(",|\\[|\\]");
+                Double[] dbs = new Double[strs.length];
+                for (int i = 0; i<strs.length;i++){
+                    dbs[i]=Double.parseDouble(strs[i]);
+                }
+                List<List<Double>> lists = splitArr(Arrays.asList(dbs), 0);
+                double labelDouble = lists.get(0).get(0);
+                Double[] fetureDouble = lists.get(1).toArray(new Double[0]);
+                double[] feture_double = Arrays.stream(fetureDouble).mapToDouble(Double::valueOf).toArray();*/
 
-                System.out.println(lp.label()+"______"+lp.features());
-                return lp;
+                double[] feture_doubles = new double[trainFetureNum];
+                double labelDouble = row.getDouble(0);
+                for(int i = 0;i<trainFetureNum;i++){
+                    feture_doubles[i] = row.getDouble(i+1);
+                }
+                return new LabeledPoint(labelDouble,Vectors.dense(feture_doubles));
+            }
+        });
+        System.out.println("————————trainRDD"+trainRDD.collect());
+
+        NaiveBayesModel model = NaiveBayes.train(trainRDD.rdd());
+
+        //select第一个参数没用 只是为了用select（String,String[]）动态取列 测试集取参时从第二列开始取
+        Dataset<Row> testRows = sqlContext.read().jdbc(testTableUrl,testTableName,testConnProp).select(testFetureCol[0],testFetureCol);
+        testRows.show();
+
+        JavaRDD<LabeledPoint> resRDD = testRows.javaRDD().map(new Function<Row, LabeledPoint>() {
+            @Override
+            public LabeledPoint call(Row row) throws Exception {
+
+                double[] testFetureDoubles = new double[testFetureNum];
+                for (int i = 0;i<testFetureNum;i++){
+                    //第一列为无用列 从第二列开始取
+                    testFetureDoubles[i] = row.getDouble(i+1);
+                }
+                Vector testFetureVector = Vectors.dense(testFetureDoubles);
+                double resLabel = model.predict(testFetureVector);
+                return new LabeledPoint(resLabel,testFetureVector);
             }
         });
 
-//        trainData.saveAsTextFile("file:///home/spark-test/trainData.txt");
+        System.out.println("————————resRDD:"+resRDD.collect());
 
-        final NaiveBayesModel model = NaiveBayes.train(trainData.rdd());
-//        model.save(jsc.sc(),"file:///home/spark-test/model");
+        JavaRDD<Row> resRowRdd = resRDD.map(new Function<LabeledPoint, Row>() {
 
-        Dataset<Row> testData = sqlContext.read().jdbc(url,"bayes_test_data",connectionProperties).select("*");
-
-        testData.show();
-
-/*        JavaRDD<LabeledPoint> testDataRDD = testData.javaRDD().map(new Function<Row, LabeledPoint>() {
-            @Override
-            public LabeledPoint call(Row row) throws Exception {
-                LabeledPoint lp = new LabeledPoint(row.getInt(1), Vectors.dense(row.getInt(2),row.getInt(3),row.getInt(4)));
-                return lp;
-            }
-        });*/
-
-        JavaRDD<LabeledPoint> res = testData.javaRDD().map(new Function<Row, LabeledPoint>() {
-            @Override
-            public LabeledPoint call(Row row) throws Exception {
-
-                Vector v = Vectors.dense(row.getDouble(2),row.getDouble(3),row.getDouble(4));
-                double label = model.predict(v);
-
-                return new LabeledPoint(label,v);
-            }
-        });
-
-//        res.saveAsTextFile("file:///home/spark-test/result115");
-
-        JavaRDD<Row> rowRDD = res.map(new Function<LabeledPoint, Row>() {
             @Override
             public Row call(LabeledPoint labeledPoint) throws Exception {
-                return RowFactory.create(labeledPoint.label(),labeledPoint.features().toArray()[0],labeledPoint.features().toArray()[1],labeledPoint.features().toArray()[2]);
+                double[] resLabel = {labeledPoint.label()};
+                double[] resFeatures = labeledPoint.features().toArray();
+                double[] newRowDoubles =  ArrayUtils.addAll(resLabel,resFeatures);
+                //动态构建row需要转为Object[]
+                Object[] newRowObjects = new Object[newRowDoubles.length];
+                for (int i= 0;i<newRowDoubles.length;i++){
+                    newRowObjects[i] = newRowDoubles[i];
+                }
+//                Object[] test = {1.0,2.0,3.0,4.0};
+                return RowFactory.create(newRowObjects);
             }
         });
-//        rowRDD.saveAsTextFile("file:///home/spark-test/rowRDD");
+
+        System.out.println("——————————resRowRDD:"+resRowRdd.collect());
 
         List structFields = new ArrayList();
-        structFields.add(DataTypes.createStructField("label",DataTypes.DoubleType,true));
+        structFields.add(DataTypes.createStructField(resultLabelCol,DataTypes.DoubleType,true));
+        for (String s:resultFetureCol){
+            structFields.add(DataTypes.createStructField(s,DataTypes.DoubleType,true));
+        }
+
+/*        structFields.add(DataTypes.createStructField("label",DataTypes.DoubleType,true));
         structFields.add(DataTypes.createStructField("feture1",DataTypes.DoubleType,true));
         structFields.add(DataTypes.createStructField("feture2",DataTypes.DoubleType,true));
-        structFields.add(DataTypes.createStructField("feture3",DataTypes.DoubleType,true));
+        structFields.add(DataTypes.createStructField("feture3",DataTypes.DoubleType,true));*/
 
         StructType structType = DataTypes.createStructType(structFields);
-        Dataset<Row> persistDF = sqlContext.createDataFrame(rowRDD,structType);
-        persistDF.write().mode("append").jdbc(url,"bayes_result",connectionProperties);
+        Dataset<Row> resDF = sqlContext.createDataFrame(resRowRdd,structType);
+        resDF.show();
+        resDF.write().mode("append").jdbc(resultTableUrl,resultTableName,resultConnProp);
 
         jsc.close();
     }

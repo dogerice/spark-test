@@ -78,7 +78,7 @@ public class SparkNaiveBayes {
 
 //        trainData.saveAsTextFile("file:///home/spark-test/trainData.txt");
 
-        final NaiveBayesModel model = NaiveBayes.train(trainData.rdd());
+        NaiveBayesModel model = NaiveBayes.train(trainData.rdd());
 //        model.save(jsc.sc(),"file:///home/spark-test/model");
 
         Dataset<Row> testData = sqlContext.read().jdbc(url,"bayes_test_data",connectionProperties).select("*");
