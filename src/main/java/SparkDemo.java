@@ -38,23 +38,27 @@ public class SparkDemo {
         }
         SQLContext sqlContext = new SQLContext(jsc);
 
-        String url = "jdbc:mysql://10.16.4.67:3306/spark_test?useUnicode=true&characterEncoding=utf-8&useSSL=false";
+        String url = "jdbc:oracle:thin:@10.16.2.130:1521:hisense";
+//        String url = "jdbc:mysql://10.16.4.67:3306/spark_test?useUnicode=true&characterEncoding=utf-8&useSSL=false";
         System.out.println(url);
         //查找的表名
-        String table = "bayes_train_data";
+//        String table = "bayes_train_data";
+        String table = "AT_BAYES_TRAIN";
+
         //增加数据库的用户名(user)密码(password),指定test数据库的驱动(driver)
         Properties connectionProperties = new Properties();
-        connectionProperties.put("user","root");
-        connectionProperties.put("password","root");
-        connectionProperties.put("driver","com.mysql.jdbc.Driver");
+        connectionProperties.put("user","chengdualgo");
+        connectionProperties.put("password","chengdualgo");
+        connectionProperties.put("driver","oracle.jdbc.driver.OracleDriver");
 
         //SparkJdbc读取表内容
         // 读取表数据
-        String trainLabelCol = "label";
-        String trainFetureCol[] = {"feture1","feture2","feture3"};
+        String trainLabelCol = "train_label";
+        String trainFetureCol[] = {"train1","train2","train3"};
         int trainFetureNum = 3;
 
-        String testFetureCol[] = {"feture1","feture2","feture3"};
+
+        String testFetureCol[] = {"test1","test2","test3"};
         int testFetureNum = 3;
 
         Dataset<Row> trainRows = sqlContext.read().jdbc(url,table,connectionProperties).select(trainLabelCol,trainFetureCol);
@@ -84,28 +88,41 @@ public class SparkDemo {
 
         NaiveBayesModel model = NaiveBayes.train(trainRDD.rdd());
 
-        //select第一个参数没用 只是为了用select（String,String[]）动态取列 测试集取参时从第二列开始取
-        Dataset<Row> testRows = sqlContext.read().jdbc(url,"bayes_test_data",connectionProperties).select(trainFetureCol[0],trainFetureCol);
+        //select第一个参数没用 只是为了用select（String,String[]）动态取列 测试集取参时从第二列开始取   (xxx现在改为id了)
+        Dataset<Row> testRows = sqlContext.read().jdbc(url,"AT_BAYES_TEST",connectionProperties).select("id",testFetureCol);
         testRows.show();
 
-        JavaRDD<LabeledPoint> resRDD = testRows.javaRDD().map(new Function<Row, LabeledPoint>() {
+        JavaRDD<Row> resRowRDD = testRows.javaRDD().map(new Function<Row, Row>() {
             @Override
-            public LabeledPoint call(Row row) throws Exception {
+            public Row call(Row row) throws Exception {
 
                 double[] testFetureDoubles = new double[testFetureNum];
-                for (int i = 0;i<testFetureNum;i++){
+                int id = Integer.parseInt(row.get(0).toString()) ;
+                for (int i = 0; i < testFetureNum; i++) {
                     //第一列为无用列 从第二列开始取
-                    testFetureDoubles[i] = Double.parseDouble(row.get(i+1).toString());
+                    testFetureDoubles[i] = Double.parseDouble(row.get(i + 1).toString());
                 }
                 Vector testFetureVector = Vectors.dense(testFetureDoubles);
                 double resLabel = model.predict(testFetureVector);
-                return new LabeledPoint(resLabel,testFetureVector);
+                double[] resLabelArr = {resLabel};
+                double[] idArr = {id};
+                double[] newArr1 = ArrayUtils.addAll(idArr, resLabelArr);
+                double[] newArr2 = ArrayUtils.addAll(newArr1, testFetureDoubles);
+
+                Object[] newRowObjectArr = new Object[newArr2.length];
+                newRowObjectArr[0] = id;
+                for (int i = 1; i < newRowObjectArr.length; i++) {
+
+                    newRowObjectArr[i] = newArr2[i];
+                }
+                return RowFactory.create(newRowObjectArr);
+//                return new LabeledPoint(resLabel,testFetureVector);
             }
         });
 
-        System.out.println("————————resRDD:"+resRDD.collect());
+//        System.out.println("————————resRowRDD:"+resRowRDD.collect());
 
-        JavaRDD<Row> resRowRdd = resRDD.map(new Function<LabeledPoint, Row>() {
+        /*JavaRDD<Row> resRowRdd = resRDD.map(new Function<LabeledPoint, Row>() {
 
             @Override
             public Row call(LabeledPoint labeledPoint) throws Exception {
@@ -120,14 +137,15 @@ public class SparkDemo {
 //                Object[] test = {1.0,2.0,3.0,4.0};
                 return RowFactory.create(newRowObjects);
             }
-        });
+        });*/
 
-        System.out.println("——————————resRowRDD:"+resRowRdd.collect());
+//        System.out.println("——————————resRowRDD:"+resRowRdd.collect());
 
-        String resultLabelCol ="label";
-        String[] resultFetureCol = {"feture1","feture2","feture3"};
+        String resultLabelCol ="result_label";
+        String[] resultFetureCol = {"result1","result2","result3"};
 
         List structFields = new ArrayList();
+        structFields.add(DataTypes.createStructField("id",DataTypes.IntegerType,true));
         structFields.add(DataTypes.createStructField(resultLabelCol,DataTypes.DoubleType,true));
         for (String s:resultFetureCol){
             structFields.add(DataTypes.createStructField(s,DataTypes.DoubleType,true));
@@ -139,9 +157,9 @@ public class SparkDemo {
         structFields.add(DataTypes.createStructField("feture3",DataTypes.DoubleType,true));*/
 
         StructType structType = DataTypes.createStructType(structFields);
-        Dataset<Row> resDF = sqlContext.createDataFrame(resRowRdd,structType);
+        Dataset<Row> resDF = sqlContext.createDataFrame(resRowRDD,structType);
         resDF.show();
-        resDF.write().mode("append").jdbc(url,"bayes_result",connectionProperties);
+        resDF.write().mode("append").jdbc(url,"AT_BAYES_RESULT",connectionProperties);
 
         jsc.close();
 

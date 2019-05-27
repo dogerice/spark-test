@@ -52,39 +52,48 @@ public class NaiveBayesAlgorithm {
         System.out.println(operationalParam.toJSONString());
 
         //训练表信息
-        String trainTableUrl="jdbc:mysql://"+trainTable.getString("database_address")+":"+trainTable.getString("port")+"/"+
-                trainTable.getString("database")+"?useUnicode=true&characterEncoding=utf-8&useSSL=false";
+/*        String trainTableUrl="jdbc:mysql://"+trainTable.getString("database_address")+":"+trainTable.getString("port")+"/"+
+                trainTable.getString("database")+"?useUnicode=true&characterEncoding=utf-8&useSSL=false";*/
+        String trainTableUrl = "jdbc:oracle:thin:@"+trainTable.getString("database_address")+":"+
+                trainTable.getString("port")+":"+trainTable.getString("database");
         String trainTableName=trainTable.getString("tablename");
         Properties trainConnProp = new Properties();
         trainConnProp.put("user",trainTable.getString("account"));
         trainConnProp.put("password",trainTable.getString("password"));
-        trainConnProp.put("driver","com.mysql.jdbc.Driver");
+//        trainConnProp.put("driver","com.mysql.jdbc.Driver");
+        trainConnProp.put("driver","oracle.jdbc.driver.OracleDriver");
         String trainLabelCol = operationalParam.getString("train_label_col");
         String[] trainFetureCol = operationalParam.getString("train_feture_col").split(" ");
         int trainFetureNum = trainFetureCol.length;
 
         //测试表信息
 
-        String testTableUrl="jdbc:mysql://"+testTable.getString("database_address")+":"+testTable.getString("port")+"/"+
-                testTable.getString("database")+"?useUnicode=true&characterEncoding=utf-8&useSSL=false";
+/*        String testTableUrl="jdbc:mysql://"+testTable.getString("database_address")+":"+testTable.getString("port")+"/"+
+                testTable.getString("database")+"?useUnicode=true&characterEncoding=utf-8&useSSL=false";*/
+        String testTableUrl = "jdbc:oracle:thin:@"+testTable.getString("database_address")+":"+
+                testTable.getString("port")+":"+testTable.getString("database");
+
         String testTableName=testTable.getString("tablename");
         Properties testConnProp = new Properties();
         testConnProp.put("user",testTable.getString("account"));
         testConnProp.put("password",testTable.getString("password"));
-        testConnProp.put("driver","com.mysql.jdbc.Driver");
-
+//        testConnProp.put("driver","com.mysql.jdbc.Driver");
+        testConnProp.put("driver","oracle.jdbc.driver.OracleDriver");
         String[] testFetureCol = operationalParam.getString("test_feture_col").split(" ");
         int testFetureNum = testFetureCol.length;
 
         //结果表信息
 
-        String resultTableUrl="jdbc:mysql://"+resultTable.getString("database_address")+":"+resultTable.getString("port")+"/"+
-                resultTable.getString("database")+"?useUnicode=true&characterEncoding=utf-8&useSSL=false";
+/*        String resultTableUrl="jdbc:mysql://"+resultTable.getString("database_address")+":"+resultTable.getString("port")+"/"+
+                resultTable.getString("database")+"?useUnicode=true&characterEncoding=utf-8&useSSL=false";*/
+        String resultTableUrl = "jdbc:oracle:thin:@"+resultTable.getString("database_address")+":"+
+                resultTable.getString("port")+":"+resultTable.getString("database");
         String resultTableName=resultTable.getString("tablename");
         Properties resultConnProp = new Properties();
         resultConnProp.put("user",resultTable.getString("account"));
         resultConnProp.put("password",resultTable.getString("password"));
-        resultConnProp.put("driver","com.mysql.jdbc.Driver");
+//        resultConnProp.put("driver","com.mysql.jdbc.Driver");
+        resultConnProp.put("driver","oracle.jdbc.driver.OracleDriver");
         String resultLabelCol = operationalParam.getString("result_label_col");
         String[] resultFetureCol = operationalParam.getString("result_feture_col").split(" ");
         int resultFetureNum = resultFetureCol.length;
@@ -125,9 +134,9 @@ public class NaiveBayesAlgorithm {
                 double[] feture_double = Arrays.stream(fetureDouble).mapToDouble(Double::valueOf).toArray();*/
 
                 double[] feture_doubles = new double[trainFetureNum];
-                double labelDouble = row.getDouble(0);
+                double labelDouble = new Double(row.get(0).toString());
                 for(int i = 0;i<trainFetureNum;i++){
-                    feture_doubles[i] = row.getDouble(i+1);
+                    feture_doubles[i] = Double.parseDouble(row.get(i+1).toString());
                 }
                 return new LabeledPoint(labelDouble,Vectors.dense(feture_doubles));
             }
@@ -137,27 +146,39 @@ public class NaiveBayesAlgorithm {
         NaiveBayesModel model = NaiveBayes.train(trainRDD.rdd());
 
         //select第一个参数没用 只是为了用select（String,String[]）动态取列 测试集取参时从第二列开始取
-        Dataset<Row> testRows = sqlContext.read().jdbc(testTableUrl,testTableName,testConnProp).select(testFetureCol[0],testFetureCol);
+        Dataset<Row> testRows = sqlContext.read().jdbc(testTableUrl,testTableName,testConnProp).select("id",testFetureCol);
         testRows.show();
 
-        JavaRDD<LabeledPoint> resRDD = testRows.javaRDD().map(new Function<Row, LabeledPoint>() {
+        JavaRDD<Row> resRowRDD = testRows.javaRDD().map(new Function<Row, Row>() {
             @Override
-            public LabeledPoint call(Row row) throws Exception {
+            public Row call(Row row) throws Exception {
 
                 double[] testFetureDoubles = new double[testFetureNum];
-                for (int i = 0;i<testFetureNum;i++){
+                int id = Integer.parseInt(row.get(0).toString());
+                for (int i = 0; i < testFetureNum; i++) {
                     //第一列为无用列 从第二列开始取
-                    testFetureDoubles[i] = row.getDouble(i+1);
+                    testFetureDoubles[i] = Double.parseDouble(row.get(i + 1).toString());
                 }
                 Vector testFetureVector = Vectors.dense(testFetureDoubles);
                 double resLabel = model.predict(testFetureVector);
-                return new LabeledPoint(resLabel,testFetureVector);
+                double[] resLabelArr = {resLabel};
+                double[] idArr = {id};
+                double[] newArr1 = ArrayUtils.addAll(idArr, resLabelArr);
+                double[] newArr2 = ArrayUtils.addAll(newArr1, testFetureDoubles);
+
+                Object[] newRowObjectArr = new Object[newArr2.length];
+                newRowObjectArr[0] = id;
+                for (int i = 1; i < newRowObjectArr.length; i++) {
+
+                    newRowObjectArr[i] = newArr2[i];
+                }
+                return RowFactory.create(newRowObjectArr);
             }
         });
 
-        System.out.println("————————resRDD:"+resRDD.collect());
+//        System.out.println("————————resRDD:"+resRowRDD.collect());
 
-        JavaRDD<Row> resRowRdd = resRDD.map(new Function<LabeledPoint, Row>() {
+/*        JavaRDD<Row> resRowRdd = resRDD.map(new Function<LabeledPoint, Row>() {
 
             @Override
             public Row call(LabeledPoint labeledPoint) throws Exception {
@@ -172,11 +193,12 @@ public class NaiveBayesAlgorithm {
 //                Object[] test = {1.0,2.0,3.0,4.0};
                 return RowFactory.create(newRowObjects);
             }
-        });
+        });*/
 
-        System.out.println("——————————resRowRDD:"+resRowRdd.collect());
+        System.out.println("——————————resRowRDD:"+resRowRDD.collect());
 
         List structFields = new ArrayList();
+        structFields.add(DataTypes.createStructField("id",DataTypes.IntegerType,true));
         structFields.add(DataTypes.createStructField(resultLabelCol,DataTypes.DoubleType,true));
         for (String s:resultFetureCol){
             structFields.add(DataTypes.createStructField(s,DataTypes.DoubleType,true));
@@ -188,7 +210,7 @@ public class NaiveBayesAlgorithm {
         structFields.add(DataTypes.createStructField("feture3",DataTypes.DoubleType,true));*/
 
         StructType structType = DataTypes.createStructType(structFields);
-        Dataset<Row> resDF = sqlContext.createDataFrame(resRowRdd,structType);
+        Dataset<Row> resDF = sqlContext.createDataFrame(resRowRDD,structType);
         resDF.show();
         resDF.write().mode("append").jdbc(resultTableUrl,resultTableName,resultConnProp);
 
