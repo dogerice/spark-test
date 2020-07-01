@@ -36,6 +36,7 @@ public class SparkNaiveBayes {
     public static void main(String args[]){
         SparkConf conf = new SparkConf().setAppName("SparkNaiveBayesTest");
         JavaSparkContext jsc = new JavaSparkContext(conf);
+
         for(String arg :args){
             System.out.println("_______________________________________________________________________________________"+arg);
         }

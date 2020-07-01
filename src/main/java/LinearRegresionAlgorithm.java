@@ -23,11 +23,10 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Properties;
-
 /**
  * @Auther:liaohongbing@hisense.com
  * @date:2019/5/27
- * @des
+ * @des 线性回归
  */
 public class LinearRegresionAlgorithm {
 
@@ -198,17 +197,15 @@ public class LinearRegresionAlgorithm {
         });
         System.out.println("------------------------resRowRDD:  "+resRowRDD.collect());
         List structFields = new ArrayList();
-        structFields.add(DataTypes.createStructField("id",DataTypes.StringType,true));
-        structFields.add(DataTypes.createStructField(resultLabelCol,DataTypes.StringType,true));
+        structFields.add(DataTypes.createStructField("id",DataTypes.IntegerType,true));
+        structFields.add(DataTypes.createStructField(resultLabelCol,DataTypes.DoubleType,true));
         for (String s:resultFetureCol){
-            structFields.add(DataTypes.createStructField(s,DataTypes.StringType,true));
+            structFields.add(DataTypes.createStructField(s,DataTypes.DoubleType,true));
         }
-
         StructType structType = DataTypes.createStructType(structFields);
         Dataset<Row> resDF = sqlContext.createDataFrame(resRowRDD,structType);
         resDF.show();
         resDF.write().mode("append").jdbc(resultTableUrl,resultTableName,resultConnProp);
-
         jsc.close();
 
     }

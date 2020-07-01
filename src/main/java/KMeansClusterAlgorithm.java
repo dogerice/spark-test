@@ -23,7 +23,7 @@ import java.util.Properties;
 /**
  * @Auther:liaohongbing@hisense.com
  * @date:2019/5/1
- * @des
+ * @des K均值聚类
  */
 public class KMeansClusterAlgorithm {
     public static void main(String[] args) {
